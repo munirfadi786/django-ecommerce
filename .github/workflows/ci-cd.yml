@@ -1,0 +1,53 @@
+name: Django CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Django migrations
+        run: |
+          source venv/bin/activate
+          python manage.py migrate
+
+      - name: Run Django tests
+        run: |
+          source venv/bin/activate
+          python manage.py test
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ${{ secrets.PROJECT_DIR }}
+            git pull origin main
+            source venv/bin/activate
+            pip install -r requirements.txt
+            python manage.py migrate
+            # Restart Gunicorn (adjust if you use a different service)
+            sudo systemctl restart gunicorn
+            # Optional: reload Nginx
+            sudo systemctl reload nginx
