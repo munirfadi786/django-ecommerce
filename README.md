@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # FootFusion: A Django eCommerce Website
 
 <div align="center">
@@ -162,3 +163,7 @@ Contributions are welcome! Please fork this repository and create a pull request
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+=======
+# django-ecommerce
+This ecommerce is built on the python-django technologies
+>>>>>>> a0145cf70c51823857624c627848bb3c920337de

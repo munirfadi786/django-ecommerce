@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 import razorpay
-from weasyprint import CSS, HTML
+# from weasyprint import CSS, HTML
 from products.models import *
 from django.urls import reverse
 from django.conf import settings
