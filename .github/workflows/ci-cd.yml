@@ -31,32 +31,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Set up Python
+      # Step 2: Set up Python (for local checks)
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
-      # Step 3: Install dependencies locally (optional)
+      # Step 3: Install dependencies locally (Pre-flight check)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
-      # Step 4: Run migrations locally (optional)
+      # Step 4, 5, 6: Local Checks
       - name: Run Django migrations
         run: python manage.py migrate
-
-      # Step 5: Run tests locally (optional)
       - name: Run Django tests
         run: python manage.py test
-
-      # Step 6: Collect static files locally (optional)
       - name: Collect static files
         run: python manage.py collectstatic --noinput
 
-      # Step 7: Copy files to EC2 
-      # Ensures the latest code is on the server before setup
+      ---
+
+      # Step 7: Copy files to EC2 (Deployment)
       - name: Copy files to EC2
         uses: easingthemes/ssh-deploy@v2
         with:
@@ -67,8 +64,9 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: --exclude="venv/*"
 
+      ---
+
       # Step 8: Run server setup commands on EC2
-      # Handles all setup (venv, deps, services files)
       - name: Setup and deploy on EC2
         uses: appleboy/ssh-action@v0.1.9
         with:
@@ -81,11 +79,10 @@ jobs:
 
             echo "Starting server setup on EC2..."
             
-            # Create project directory and set permissions
+            # 1️⃣ Setup permissions and venv
             sudo mkdir -p $REMOTE_DIR
             sudo chown -R $USER:$USER $REMOTE_DIR
 
-            # Setup virtual environment
             if [ ! -d "$REMOTE_DIR/venv" ]; then
               echo "Creating virtual environment..."
               python3 -m venv $REMOTE_DIR/venv
@@ -94,20 +91,19 @@ jobs:
             VENV_PIP="$REMOTE_DIR/venv/bin/pip"
             VENV_PYTHON="$REMOTE_DIR/venv/bin/python"
 
-            # Install dependencies
+            # 2️⃣ Install dependencies, run migrations, collect static
             echo "Installing dependencies..."
             $VENV_PIP install --upgrade pip setuptools wheel
             $VENV_PIP install -r $REMOTE_DIR/requirements.txt
-
-            # Run migrations and collect static files
+            
             echo "Running migrations and collecting static files..."
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
             
-# Setup Gunicorn service file
+            # 3️⃣ Setup Gunicorn service file
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
               echo "Setting up Gunicorn service file..."
-              # Use single quotes to safely embed the multiline content
+              # Use single quotes to encapsulate the command, ensuring proper heredoc passing
               sudo bash -c 'cat > /etc/systemd/system/gunicorn.service <<EOF
 [Unit]
 Description=gunicorn daemon for Django
@@ -121,14 +117,15 @@ ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind un
 
 [Install]
 WantedBy=multi-user.target
-EOF' # <-- EOF must be flush left against the shell command boundary.
+EOF'
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
-# Setup Nginx configuration file
+
+            # 4️⃣ Setup Nginx configuration file
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
               echo "Setting up Nginx configuration file..."
-              # Use single quotes again for safe embedding
+              # Use single quotes to encapsulate the command
               sudo bash -c 'cat > /etc/nginx/sites-available/django-ecommerce <<EOF
 server {
     listen 80;
@@ -144,12 +141,13 @@ server {
         proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
     }
 }
-EOF' # <-- EOF must be flush left against the shell command boundary.
+EOF'
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
             fi
-            
-      # ➡️ NEW STEP: Step 9: Service Restart
-      # This step forces a restart/reload after all configurations are written.
+
+      ---
+
+      # Step 9: Service Restart (Dedicated step for maximum reliability)
       - name: Restart Gunicorn and Nginx
         uses: appleboy/ssh-action@v0.1.9
         with:
@@ -158,12 +156,13 @@ EOF' # <-- EOF must be flush left against the shell command boundary.
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
             echo "Restarting Gunicorn and Nginx services..."
-            # Forcing a reload just in case
+            
+            # Daemon reload is essential after creating/changing service files
             sudo systemctl daemon-reload
             
             # Restart/Status Gunicorn
             sudo systemctl restart gunicorn
-            sudo systemctl status gunicorn --no-pager || true # Use || true to prevent failure on non-zero exit code
+            sudo systemctl status gunicorn --no-pager || true 
             
             # Restart/Status Nginx
             sudo systemctl restart nginx
