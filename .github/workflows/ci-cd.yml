@@ -44,7 +44,6 @@ jobs:
       - name: Collect static files (Local)
         run: python manage.py collectstatic --noinput
 
-      ---
 
       # Step 7: Copy files to EC2 (Deployment)
       - name: Copy files to EC2
@@ -57,7 +56,6 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: --exclude="venv/*"
 
-      ---
 
       # Step 8: Setup and deploy on EC2
       # Handles dependencies, venv, and copies pre-written service files
@@ -122,7 +120,7 @@ jobs:
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
             fi
 
-      ---
+ 
 
       # Step 9: Service Restart (Dedicated step for maximum reliability)
       - name: Restart Gunicorn and Nginx
