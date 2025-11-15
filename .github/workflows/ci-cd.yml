@@ -65,6 +65,9 @@ jobs:
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
+            echo "REMOTE_USER=${REMOTE_USER}"
+            whoami
+            id
             # 1️⃣ Setup virtual environment
             sudo mkdir -p /home/ubuntu/django-ecommerce
             sudo chown -R ubuntu:ubuntu /home/ubuntu/django-ecommerce
