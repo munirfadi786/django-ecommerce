@@ -1,3 +1,126 @@
+# name: Django CI/CD
+
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     branches:
+#       - main
+
+# jobs:
+#   build-and-deploy:
+#     runs-on: ubuntu-latest
+#     env:
+#       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+#       DEBUG: ${{ secrets.DEBUG }}
+#       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#       AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+#       BASE_URL: ${{ secrets.BASE_URL }}
+#       ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
+#       RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+#       RAZORPAY_SECRET_KEY: ${{ secrets.RAZORPAY_SECRET_KEY }}
+#       SOCIAL_AUTH_FACEBOOK_KEY: ${{ secrets.SOCIAL_AUTH_FACEBOOK_KEY }}
+#       SOCIAL_AUTH_FACEBOOK_SECRET: ${{ secrets.SOCIAL_AUTH_FACEBOOK_SECRET }}
+#       EMAIL_HOST_USER: ${{ secrets.EMAIL_HOST_USER }}
+#       EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
+
+#     steps:
+#       # Step 1: Checkout code
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
+
+#       # Step 2: Set up Python
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: 3.11
+
+#       # Step 3: Install dependencies locally (optional)
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip setuptools wheel
+#           pip install -r requirements.txt
+
+#       # Step 4: Run migrations locally (optional)
+#       - name: Run Django migrations
+#         run: python manage.py migrate
+
+#       # Step 5: Run tests locally (optional)
+#       - name: Run Django tests
+#         run: python manage.py test
+
+#       # Step 6: Collect static files locally (optional)
+#       - name: Collect static files
+#         run: python manage.py collectstatic --noinput
+# # Step 7: Deploy to AWS EC2 and setup Gunicorn + Nginx
+#       - name: Deploy to AWS EC2
+#         uses: easingthemes/ssh-deploy@v2
+#         with:
+#           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
+#           REMOTE_USER: ${{ secrets.AWS_SSH_USER }} # Should be 'ubuntu'
+#           REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
+#           SOURCE: .
+#           TARGET: /home/ubuntu/django-ecommerce # Consistent path
+#           # ARGS is ONLY for rsync arguments, leave it blank or use for --exclude
+#           # ARGS: --exclude='venv/*'
+
+#       - name: Run server commands via SSH
+#         run: |
+#           ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@${{ secrets.AWS_SERVER_IP }} 'bash -s' <<'EOF'
+#           REMOTE_DIR=/home/ubuntu/django-ecommerce
+#           if [ ! -d "$REMOTE_DIR/venv" ]; then
+#               python3 -m venv $REMOTE_DIR/venv
+#           fi
+#           $REMOTE_DIR/venv/bin/pip install --upgrade pip setuptools wheel
+#           $REMOTE_DIR/venv/bin/pip install -r $REMOTE_DIR/requirements.txt
+#           $REMOTE_DIR/venv/bin/python $REMOTE_DIR/manage.py migrate
+#           $REMOTE_DIR/venv/bin/python $REMOTE_DIR/manage.py collectstatic --noinput
+
+#           # Gunicorn setup (same as your script)
+#           if [ ! -f /etc/systemd/system/gunicorn.service ]; then
+#               sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<GEOF
+#       [Unit]
+#       Description=gunicorn daemon
+#       After=network.target
+
+#       [Service]
+#       User=ubuntu
+#       Group=www-data
+#       WorkingDirectory=$REMOTE_DIR
+#       ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
+
+#       [Install]
+#       WantedBy=multi-user.target
+#       GEOF"
+#               sudo systemctl daemon-reload
+#               sudo systemctl enable gunicorn
+#           fi
+
+#           # Nginx setup
+#           if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
+#               sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<GEOF
+#       server {
+#           listen 80;
+#           server_name YOUR_PUBLIC_IP;
+
+#           location /static/ {
+#               root $REMOTE_DIR;
+#           }
+
+#           location / {
+#               include proxy_params;
+#               proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
+#           }
+#       }
+#       GEOF"
+#               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
+#           fi
+
+#           sudo systemctl restart gunicorn
+#           sudo systemctl restart nginx
+#       EOF
 name: Django CI/CD
 
 on:
@@ -54,88 +177,92 @@ jobs:
       # Step 6: Collect static files locally (optional)
       - name: Collect static files
         run: python manage.py collectstatic --noinput
-# Step 7: Deploy to AWS EC2 and setup Gunicorn + Nginx
-      - name: Deploy to AWS EC2
+
+      # Step 7: Copy files to EC2
+      - name: Copy files to EC2
         uses: easingthemes/ssh-deploy@v2
         with:
           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
-          REMOTE_USER: ${{ secrets.AWS_SSH_USER }} # Should be 'ubuntu'
+          REMOTE_USER: ${{ secrets.AWS_SSH_USER }}
           REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
           SOURCE: .
-          TARGET: /home/ubuntu/django-ecommerce # Consistent path
-          # ARGS is ONLY for rsync arguments, leave it blank or use for --exclude
-          # ARGS: --exclude='venv/*'
-          
-          # Use SCRIPT_AFTER_DEPLOY to run commands on the remote server
-          SCRIPT_AFTER_DEPLOY: |
-            REMOTE_DIR=/home/${{ secrets.AWS_SSH_USER }}/django-ecommerce
-            USER=${{ secrets.AWS_SSH_USER }}
+          TARGET: /home/ubuntu/django-ecommerce
+          ARGS: --exclude="venv/*"
+
+      # Step 8: Run server setup commands on EC2
+      - name: Setup and deploy on EC2
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.AWS_SERVER_IP }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            REMOTE_DIR=/home/ubuntu/django-ecommerce
 
             echo "Connected as: $(whoami)"
             id
-            
-            # 1️⃣ Setup permissions and venv
+
+            # Create project directory and set permissions
             sudo mkdir -p $REMOTE_DIR
-            sudo chown -R $USER:$USER $REMOTE_DIR
-            
+            sudo chown -R ubuntu:ubuntu $REMOTE_DIR
+
+            # Setup virtual environment
             if [ ! -d "$REMOTE_DIR/venv" ]; then
               python3 -m venv $REMOTE_DIR/venv
             fi
-            
-            # Activate venv in a way that works with non-interactive shells
-            # Instead of 'source', we'll run commands directly via the venv python/pip
+
             VENV_PIP="$REMOTE_DIR/venv/bin/pip"
             VENV_PYTHON="$REMOTE_DIR/venv/bin/python"
 
-            # 2️⃣ Install dependencies on server
+            # Install dependencies
             $VENV_PIP install --upgrade pip setuptools wheel
             $VENV_PIP install -r $REMOTE_DIR/requirements.txt
 
-            # 3️⃣ Run migrations & collect static files
+            # Run migrations and collect static files
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
 
-            # 4️⃣ Setup Gunicorn service if not exists
+            # Setup Gunicorn
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
               sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<EOF
-              [Unit]
-              Description=gunicorn daemon for Django
-              After=network.target
+[Unit]
+Description=gunicorn daemon for Django
+After=network.target
 
-              [Service]
-              User=$USER
-              Group=www-data
-              WorkingDirectory=$REMOTE_DIR
-              ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=$REMOTE_DIR
+ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
 
-              [Install]
-              WantedBy=multi-user.target
-              EOF"
+[Install]
+WantedBy=multi-user.target
+EOF"
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
 
-            # 5️⃣ Setup Nginx if not exists
+            # Setup Nginx
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
               sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<EOF
-              server {
-                  listen 80;
-                  server_name ${{ env.BASE_URL }}; # Use BASE_URL from job env
+server {
+    listen 80;
+    server_name ${{ env.BASE_URL }};
 
-                  location = /favicon.ico { access_log off; log_not_found off; }
-                  location /static/ {
-                      root $REMOTE_DIR;
-                  }
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location /static/ {
+        root $REMOTE_DIR;
+    }
 
-                  location / {
-                      include proxy_params;
-                      proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
-                  }
-              }
-              EOF"
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
+    }
+}
+EOF"
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
             fi
 
-            # 6️⃣ Restart Gunicorn & Nginx
+            # Restart services
             sudo systemctl restart gunicorn
             sudo systemctl restart nginx
