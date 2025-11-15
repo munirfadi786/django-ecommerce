@@ -64,7 +64,7 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: --exclude="venv/*"
 
-      ---
+    
 # Step 8: Run server setup commands on EC2
       # Handles all setup (venv, deps, and moves pre-written config files)
       - name: Setup and deploy on EC2
@@ -79,7 +79,7 @@ jobs:
 
             echo "Starting server setup on EC2..."
             
-            # 1️⃣ Setup permissions and venv
+         
             sudo mkdir -p $REMOTE_DIR
             sudo chown -R $USER:$USER $REMOTE_DIR
 
@@ -91,7 +91,6 @@ jobs:
             VENV_PIP="$REMOTE_DIR/venv/bin/pip"
             VENV_PYTHON="$REMOTE_DIR/venv/bin/python"
 
-            # 2️⃣ Install dependencies, run migrations, collect static
             echo "Installing dependencies..."
             $VENV_PIP install --upgrade pip setuptools wheel
             $VENV_PIP install -r $REMOTE_DIR/requirements.txt
@@ -99,8 +98,7 @@ jobs:
             echo "Running migrations and collecting static files..."
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
-            
-            # 3️⃣ Setup Gunicorn service (copying pre-written file)
+    
             # Check if the service file exists in its final location
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
               echo "Moving Gunicorn service file into systemd..."
@@ -111,7 +109,7 @@ jobs:
               sudo systemctl enable gunicorn
             fi
 
-            # 4️⃣ Setup Nginx configuration (copying pre-written file)
+  
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
               echo "Moving Nginx config file and enabling site..."
               # Copy and rename the file to the conventional site name
