@@ -59,19 +59,19 @@ jobs:
       - name: Deploy to AWS EC2
         uses: easingthemes/ssh-deploy@v2
         with:
-          ssh-private-key: ${{ secrets.AWS_SSH_KEY }}
-          remote-user: ${{ secrets.AWS_SSH_USER }}
-          server-ip: ${{ secrets.AWS_SERVER_IP }}
-          local-path: .
-          remote-path: /home/ubuntu/django-ecommerce
-          pre-deploy: |
+          SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
+          REMOTE_USER: ${{ secrets.AWS_SSH_USER }}
+          REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
+          SOURCE: .
+          TARGET: /home/ubuntu/django-ecommerce
+          ARGS: |
             cd /home/ubuntu/django-ecommerce
             git fetch --all
             git reset --hard origin/main
-          post-deploy: |
             source venv/bin/activate
             pip install -r requirements.txt
             python manage.py migrate
             python manage.py collectstatic --noinput
             sudo systemctl restart gunicorn
             sudo systemctl restart nginx
+
