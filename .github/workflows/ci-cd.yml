@@ -70,7 +70,7 @@ jobs:
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
-            REMOTE_DIR=/home/ubuntu/django-ecommerce
+           REMOTE_DIR=/home/ubuntu/django-ecommerce
             USER=${{ secrets.AWS_SSH_USER }}
 
             echo "Installing system dependencies..."
@@ -91,27 +91,51 @@ jobs:
             $VENV_PYTHON -m pip install -r $REMOTE_DIR/requirements.txt
             $VENV_PYTHON -m pip install gunicorn
 
+            # --- CRITICAL FIX: Create gunicorn.env with secrets ---
+            echo "Creating Gunicorn environment file (gunicorn.env) from secrets..."
+            # These variables are expanded by the GitHub Actions runner before running on the server.
+            echo "SECRET_KEY='${{ secrets.SECRET_KEY }}'" > $REMOTE_DIR/server-configs/gunicorn.env
+            echo "DEBUG='${{ secrets.DEBUG }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "AWS_DEFAULT_REGION='${{ secrets.AWS_DEFAULT_REGION }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "BASE_URL='${{ secrets.BASE_URL }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "ALLOWED_HOSTS='${{ secrets.ALLOWED_HOSTS }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "RAZORPAY_KEY_ID='${{ secrets.RAZORPAY_KEY_ID }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "RAZORPAY_SECRET_KEY='${{ secrets.RAZORPAY_SECRET_KEY }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "SOCIAL_AUTH_FACEBOOK_KEY='${{ secrets.SOCIAL_AUTH_FACEBOOK_KEY }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "SOCIAL_AUTH_FACEBOOK_SECRET='${{ secrets.SOCIAL_AUTH_FACEBOOK_SECRET }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "EMAIL_HOST_USER='${{ secrets.EMAIL_HOST_USER }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            echo "EMAIL_HOST_PASSWORD='${{ secrets.EMAIL_HOST_PASSWORD }}'" >> $REMOTE_DIR/server-configs/gunicorn.env
+            # Set permissions
+            sudo chown $USER:$USER $REMOTE_DIR/server-configs/gunicorn.env
+            # ---------------------------------------------------
+
             echo "Running migrations and collecting static files..."
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
 
-            # 7️⃣ Gunicorn service
-            if [ ! -f /etc/systemd/system/gunicorn.service ]; then
-              sudo cp $REMOTE_DIR/server-configs/gunicorn.service /etc/systemd/system/gunicorn.service
-              sudo systemctl daemon-reload
+            # 7️⃣ Gunicorn service - Now copies config on every run
+            echo "Copying Gunicorn service file..."
+            sudo cp $REMOTE_DIR/server-configs/gunicorn.service /etc/systemd/system/gunicorn.service
+            sudo systemctl daemon-reload
+
+            # Run 'enable' only on first deployment
+            if ! sudo systemctl is-enabled gunicorn; then
               sudo systemctl enable gunicorn
             fi
 
-            # 8️⃣ Nginx configuration - REPLACED 'if' BLOCK
+            # 8️⃣ Nginx configuration - Now copies config on every run
             echo "Copying Nginx configuration file to sites-available..."
-            # This line now runs on every deployment to ensure the latest version is used
             sudo cp $REMOTE_DIR/server-configs/nginx.conf /etc/nginx/sites-available/django-ecommerce
-            
+
             # These lines only run if the symlink hasn't been created yet
             if [ ! -f /etc/nginx/sites-enabled/django-ecommerce ]; then
               sudo rm -f /etc/nginx/sites-enabled/default
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
             fi
+
+
 
       # 9️⃣ Restart services - REPLACED WITH ROBUST SCRIPT
       - name: Restart Gunicorn and Nginx (Robust Validation)
