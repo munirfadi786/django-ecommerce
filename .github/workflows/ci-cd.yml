@@ -37,25 +37,25 @@ jobs:
         with:
           python-version: 3.11
 
-      # Step 3: Install dependencies locally (for testing)
+      # Step 3: Install dependencies locally (optional)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
-      # Step 4: Run migrations locally
+      # Step 4: Run migrations locally (optional)
       - name: Run Django migrations
         run: python manage.py migrate
 
-      # Step 5: Run tests locally
+      # Step 5: Run tests locally (optional)
       - name: Run Django tests
         run: python manage.py test
 
-      # Step 6: Collect static files locally
+      # Step 6: Collect static files locally (optional)
       - name: Collect static files
         run: python manage.py collectstatic --noinput
 
-      # Step 7: Deploy to AWS EC2
+      # Step 7: Deploy to AWS EC2 and setup Gunicorn + Nginx
       - name: Deploy to AWS EC2
         uses: easingthemes/ssh-deploy@v2
         with:
@@ -65,23 +65,61 @@ jobs:
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
-            # Activate virtual environment
+            # 1️⃣ Setup virtual environment
             if [ ! -d "/home/ubuntu/django-ecommerce/venv" ]; then
               python3 -m venv /home/ubuntu/django-ecommerce/venv
             fi
             source /home/ubuntu/django-ecommerce/venv/bin/activate
 
-            # Install dependencies on server
+            # 2️⃣ Install dependencies on server
             pip install --upgrade pip setuptools wheel
             pip install -r /home/ubuntu/django-ecommerce/requirements.txt
 
-            # Run migrations
+            # 3️⃣ Run migrations & collect static files
             python /home/ubuntu/django-ecommerce/manage.py migrate
-
-            # Collect static files
             python /home/ubuntu/django-ecommerce/manage.py collectstatic --noinput
 
-            # Restart Gunicorn and Nginx
-            sudo systemctl daemon-reload
+            # 4️⃣ Setup Gunicorn service if not exists
+            if [ ! -f /etc/systemd/system/gunicorn.service ]; then
+              sudo bash -c 'cat > /etc/systemd/system/gunicorn.service <<EOF
+              [Unit]
+              Description=gunicorn daemon for Django
+              After=network.target
+
+              [Service]
+              User=ubuntu
+              Group=www-data
+              WorkingDirectory=/home/ubuntu/django-ecommerce
+              ExecStart=/home/ubuntu/django-ecommerce/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/home/ubuntu/django-ecommerce/gunicorn.sock ecomm.wsgi:application
+
+              [Install]
+              WantedBy=multi-user.target
+              EOF'
+              sudo systemctl daemon-reload
+              sudo systemctl enable gunicorn
+            fi
+
+            # 5️⃣ Setup Nginx if not exists
+            if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
+              sudo bash -c 'cat > /etc/nginx/sites-available/django-ecommerce <<EOF
+              server {
+                  listen 80;
+                  server_name ${BASE_URL};
+
+                  location = /favicon.ico { access_log off; log_not_found off; }
+                  location /static/ {
+                      root /home/ubuntu/django-ecommerce;
+                  }
+
+                  location / {
+                      include proxy_params;
+                      proxy_pass http://unix:/home/ubuntu/django-ecommerce/gunicorn.sock;
+                  }
+              }
+              EOF'
+              sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
+            fi
+
+            # 6️⃣ Restart Gunicorn & Nginx
             sudo systemctl restart gunicorn
             sudo systemctl restart nginx
