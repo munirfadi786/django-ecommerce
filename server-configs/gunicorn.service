@@ -3,20 +3,19 @@ Description=gunicorn daemon for Django project
 After=network.target
 
 [Service]
-# CRITICAL: This line tells systemd to load all variables 
-# from the gunicorn.env file which you copied into the project directory.
+# CRITICAL: This tells systemd to create /var/run/gunicorn/ with correct permissions for Nginx
+RuntimeDirectory=gunicorn 
 UMask=002
 EnvironmentFile=/home/ubuntu/django-ecommerce/server-configs/gunicorn.env
 User=ubuntu
 Group=www-data
 WorkingDirectory=/home/ubuntu/django-ecommerce
-ExecStart=/home/ubuntu/django-ecommerce/venv/bin/gunicorn \
-         --access-logfile - \
-         --workers 3 \
-         --bind unix:/home/ubuntu/django-ecommerce/gunicorn.sock \
-         ecomm.wsgi:application
 
-# The previous Environment="..." lines are now removed, as they are in gunicorn.env.
+ExecStart=/home/ubuntu/django-ecommerce/venv/bin/gunicorn \
+    --access-logfile - \
+    --workers 3 \
+    --bind unix:/var/run/gunicorn/django-ecommerce.sock \
+    ecomm.wsgi:application
 
 [Install]
 WantedBy=multi-user.target
