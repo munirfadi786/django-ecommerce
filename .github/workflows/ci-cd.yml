@@ -51,7 +51,7 @@ jobs:
       - name: Collect static files
         run: python manage.py collectstatic --noinput
 
-      ---
+      
 
       # Step 7: Copy files to EC2 (Deployment)
       - name: Copy files to EC2
