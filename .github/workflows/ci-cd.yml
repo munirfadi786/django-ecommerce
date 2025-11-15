@@ -67,7 +67,8 @@ jobs:
           ARGS: |
             # 1️⃣ Setup virtual environment
             sudo mkdir -p /home/ubuntu/django-ecommerce
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/django-ecommerce
+            sudo chown -R ${{ secrets.AWS_SSH_USER }}:${{ secrets.AWS_SSH_USER }} /home/ubuntu/django-ecommerce
+
 
 
 
