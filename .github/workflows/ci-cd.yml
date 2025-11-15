@@ -65,6 +65,7 @@ jobs:
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
+            echo "Connected as: $(whoami)"
             echo "REMOTE_USER=${REMOTE_USER}"
             whoami
             id
