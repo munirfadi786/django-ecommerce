@@ -37,25 +37,25 @@ jobs:
         with:
           python-version: 3.11
 
-      # Step 3: Install dependencies
+      # Step 3: Install dependencies locally (for testing)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
 
-      # Step 4: Run migrations
+      # Step 4: Run migrations locally
       - name: Run Django migrations
         run: python manage.py migrate
 
-      # Step 5: Run tests
+      # Step 5: Run tests locally
       - name: Run Django tests
         run: python manage.py test
 
-      # Step 6: Collect static files (if needed)
+      # Step 6: Collect static files locally
       - name: Collect static files
         run: python manage.py collectstatic --noinput
 
-      # Step 7: Deploy to AWS (EC2-instance-2)
+      # Step 7: Deploy to AWS EC2
       - name: Deploy to AWS EC2
         uses: easingthemes/ssh-deploy@v2
         with:
@@ -65,13 +65,23 @@ jobs:
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
-            cd /home/ubuntu/django-ecommerce
-            git fetch --all
-            git reset --hard origin/main
-            source venv/bin/activate
-            pip install -r requirements.txt
-            python manage.py migrate
-            python manage.py collectstatic --noinput
+            # Activate virtual environment
+            if [ ! -d "/home/ubuntu/django-ecommerce/venv" ]; then
+              python3 -m venv /home/ubuntu/django-ecommerce/venv
+            fi
+            source /home/ubuntu/django-ecommerce/venv/bin/activate
+
+            # Install dependencies on server
+            pip install --upgrade pip setuptools wheel
+            pip install -r /home/ubuntu/django-ecommerce/requirements.txt
+
+            # Run migrations
+            python /home/ubuntu/django-ecommerce/manage.py migrate
+
+            # Collect static files
+            python /home/ubuntu/django-ecommerce/manage.py collectstatic --noinput
+
+            # Restart Gunicorn and Nginx
+            sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
             sudo systemctl restart nginx
-
