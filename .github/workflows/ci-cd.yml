@@ -66,9 +66,9 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
             # 1️⃣ Setup virtual environment
-            SSH_USER=${USER:-ubuntu}
-            mkdir -p /home/ubuntu/django-ecommerce
-            chown -R $SSH_USER:$SSH_USER /home/ubuntu/django-ecommerce
+            sudo mkdir -p /home/someuser/django-ecommerce
+            sudo chown -R ubuntu:ubuntu /home/someuser/django-ecommerce
+
 
 
             if [ ! -d "/home/ubuntu/django-ecommerce/venv" ]; then
