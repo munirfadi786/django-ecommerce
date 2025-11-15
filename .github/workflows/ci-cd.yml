@@ -61,17 +61,18 @@ jobs:
         with:
           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
           REMOTE_USER: ${{ secrets.AWS_SSH_USER }}
+          echo: $REMOTE_USER
           REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
-            echo "Connected as: $(whoami)"
-            echo "REMOTE_USER=${REMOTE_USER}"
+            SSH_USER=${{ secrets.AWS_SSH_USER }}
+            echo "Connected as: $SSH_USER"
             whoami
             id
-            # 1️⃣ Setup virtual environment
-            sudo mkdir -p /home/ubuntu/django-ecommerce
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/django-ecommerce
+            sudo mkdir -p /home/$SSH_USER/django-ecommerce
+            sudo chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/django-ecommerce
+            # rest of your commands using $SSH_USER instead of ubuntu
 
 
             if [ ! -d "/home/ubuntu/django-ecommerce/venv" ]; then
