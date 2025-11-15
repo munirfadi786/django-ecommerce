@@ -102,21 +102,41 @@ jobs:
               sudo systemctl enable gunicorn
             fi
 
-            # 8️⃣ Nginx configuration
-            if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
-              sudo cp $REMOTE_DIR/server-configs/nginx.conf /etc/nginx/sites-available/django-ecommerce
+            # 8️⃣ Nginx configuration - REPLACED 'if' BLOCK
+            echo "Copying Nginx configuration file to sites-available..."
+            # This line now runs on every deployment to ensure the latest version is used
+            sudo cp $REMOTE_DIR/server-configs/nginx.conf /etc/nginx/sites-available/django-ecommerce
+            
+            # These lines only run if the symlink hasn't been created yet
+            if [ ! -f /etc/nginx/sites-enabled/django-ecommerce ]; then
               sudo rm -f /etc/nginx/sites-enabled/default
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
             fi
 
-      # 9️⃣ Restart services
-      - name: Restart Gunicorn and Nginx
+      # 9️⃣ Restart services - REPLACED WITH ROBUST SCRIPT
+      - name: Restart Gunicorn and Nginx (Robust Validation)
         uses: appleboy/ssh-action@v0.1.9
         with:
           host: ${{ secrets.AWS_SERVER_IP }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
+            echo "Stopping Nginx for configuration update..."
+            # Stop Nginx first so we can safely check/link config files
+            sudo systemctl stop nginx || true
+
+            echo "Removing old Nginx configuration symlink to force clean link..."
+            # Remove and re-link the config file just to be absolutely sure
+            sudo rm -f /etc/nginx/sites-enabled/django-ecommerce
+            sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
+
+            echo "Validating Nginx configuration syntax..."
+            # This must succeed before we try to restart
+            if ! sudo nginx -t; then
+                echo "Nginx configuration test FAILED. Check the syntax of the deployed file."
+                exit 1
+            fi
+
             echo "Restarting Gunicorn and Nginx..."
             sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
