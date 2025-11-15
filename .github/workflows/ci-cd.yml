@@ -65,17 +65,19 @@ jobs:
           ARGS: --exclude="venv/*"
 
       ---
-
-      # Step 8: Run server setup commands on EC2
+# Step 8: Run server setup commands on EC2
+      # This version uses a robust, indented heredoc syntax (<<-EOF)
       - name: Setup and deploy on EC2
         uses: appleboy/ssh-action@v0.1.9
         with:
           host: ${{ secrets.AWS_SERVER_IP }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          # The script is written using 'indentation-safe' techniques
           script: |
             REMOTE_DIR=/home/ubuntu/django-ecommerce
             USER=${{ secrets.AWS_SSH_USER }}
+            BASE_URL_VAR=${{ env.BASE_URL }} # Pass GitHub variable to shell variable
 
             echo "Starting server setup on EC2..."
             
@@ -103,21 +105,21 @@ jobs:
             # 3️⃣ Setup Gunicorn service file
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
               echo "Setting up Gunicorn service file..."
-              # Use single quotes to encapsulate the command, ensuring proper heredoc passing
-              sudo bash -c 'cat > /etc/systemd/system/gunicorn.service <<EOF
-[Unit]
-Description=gunicorn daemon for Django
-After=network.target
+              # Use <<-EOF to allow indentation of content on the remote shell
+              sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<-EOF
+                [Unit]
+                Description=gunicorn daemon for Django
+                After=network.target
 
-[Service]
-User=$USER
-Group=www-data
-WorkingDirectory=$REMOTE_DIR
-ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
+                [Service]
+                User=$USER
+                Group=www-data
+                WorkingDirectory=$REMOTE_DIR
+                ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
 
-[Install]
-WantedBy=multi-user.target
-EOF'
+                [Install]
+                WantedBy=multi-user.target
+              EOF"
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
@@ -125,45 +127,22 @@ EOF'
             # 4️⃣ Setup Nginx configuration file
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
               echo "Setting up Nginx configuration file..."
-              # Use single quotes to encapsulate the command
-              sudo bash -c 'cat > /etc/nginx/sites-available/django-ecommerce <<EOF
-server {
-    listen 80;
-    server_name ${{ env.BASE_URL }};
+              # Use <<-EOF and the shell variable BASE_URL_VAR
+              sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<-EOF
+                server {
+                    listen 80;
+                    server_name $BASE_URL_VAR;
 
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location /static/ {
-        root $REMOTE_DIR;
-    }
+                    location = /favicon.ico { access_log off; log_not_found off; }
+                    location /static/ {
+                        root $REMOTE_DIR;
+                    }
 
-    location / {
-        include proxy_params;
-        proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
-    }
-}
-EOF'
+                    location / {
+                        include proxy_params;
+                        proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
+                    }
+                }
+              EOF"
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
             fi
-
-      ---
-
-      # Step 9: Service Restart (Dedicated step for maximum reliability)
-      - name: Restart Gunicorn and Nginx
-        uses: appleboy/ssh-action@v0.1.9
-        with:
-          host: ${{ secrets.AWS_SERVER_IP }}
-          username: ${{ secrets.AWS_SSH_USER }}
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            echo "Restarting Gunicorn and Nginx services..."
-            
-            # Daemon reload is essential after creating/changing service files
-            sudo systemctl daemon-reload
-            
-            # Restart/Status Gunicorn
-            sudo systemctl restart gunicorn
-            sudo systemctl status gunicorn --no-pager || true 
-            
-            # Restart/Status Nginx
-            sudo systemctl restart nginx
-            sudo systemctl status nginx --no-pager || true
