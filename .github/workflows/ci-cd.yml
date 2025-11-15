@@ -66,8 +66,8 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: |
             # 1️⃣ Setup virtual environment
-            sudo mkdir -p /home/someuser/django-ecommerce
-            sudo chown -R ubuntu:ubuntu /home/someuser/django-ecommerce
+            sudo mkdir -p /home/ubuntu/django-ecommerce
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/django-ecommerce
 
 
 
