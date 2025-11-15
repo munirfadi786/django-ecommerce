@@ -54,77 +54,85 @@ jobs:
       # Step 6: Collect static files locally (optional)
       - name: Collect static files
         run: python manage.py collectstatic --noinput
-
-      # Step 7: Deploy to AWS EC2 and setup Gunicorn + Nginx
+# Step 7: Deploy to AWS EC2 and setup Gunicorn + Nginx
       - name: Deploy to AWS EC2
         uses: easingthemes/ssh-deploy@v2
         with:
           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
-          REMOTE_USER: ${{ secrets.AWS_SSH_USER }}
+          REMOTE_USER: ${{ secrets.AWS_SSH_USER }} # Should be 'ubuntu'
           REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
           SOURCE: .
-          TARGET: /home/ubuntu/django-ecommerce
-          ARGS: |
-            SSH_USER=${{ secrets.AWS_SSH_USER }}
-            echo "Connected as: $SSH_USER"
-            whoami
+          TARGET: /home/ubuntu/django-ecommerce # Consistent path
+          # ARGS is ONLY for rsync arguments, leave it blank or use for --exclude
+          # ARGS: --exclude='venv/*'
+          
+          # Use SCRIPT_AFTER_DEPLOY to run commands on the remote server
+          SCRIPT_AFTER_DEPLOY: |
+            REMOTE_DIR=/home/${{ secrets.AWS_SSH_USER }}/django-ecommerce
+            USER=${{ secrets.AWS_SSH_USER }}
+
+            echo "Connected as: $(whoami)"
             id
-            sudo mkdir -p /home/$SSH_USER/django-ecommerce
-            sudo chown -R $SSH_USER:$SSH_USER /home/$SSH_USER/django-ecommerce
-            # rest of your commands using $SSH_USER instead of ubuntu
-
-
-            if [ ! -d "/home/ubuntu/django-ecommerce/venv" ]; then
-              python3 -m venv /home/ubuntu/django-ecommerce/venv
+            
+            # 1️⃣ Setup permissions and venv
+            sudo mkdir -p $REMOTE_DIR
+            sudo chown -R $USER:$USER $REMOTE_DIR
+            
+            if [ ! -d "$REMOTE_DIR/venv" ]; then
+              python3 -m venv $REMOTE_DIR/venv
             fi
-            source /home/ubuntu/django-ecommerce/venv/bin/activate
+            
+            # Activate venv in a way that works with non-interactive shells
+            # Instead of 'source', we'll run commands directly via the venv python/pip
+            VENV_PIP="$REMOTE_DIR/venv/bin/pip"
+            VENV_PYTHON="$REMOTE_DIR/venv/bin/python"
 
             # 2️⃣ Install dependencies on server
-            pip install --upgrade pip setuptools wheel
-            pip install -r /home/ubuntu/django-ecommerce/requirements.txt
+            $VENV_PIP install --upgrade pip setuptools wheel
+            $VENV_PIP install -r $REMOTE_DIR/requirements.txt
 
             # 3️⃣ Run migrations & collect static files
-            python /home/ubuntu/django-ecommerce/manage.py migrate
-            python /home/ubuntu/django-ecommerce/manage.py collectstatic --noinput
+            $VENV_PYTHON $REMOTE_DIR/manage.py migrate
+            $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
 
             # 4️⃣ Setup Gunicorn service if not exists
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
-              sudo bash -c 'cat > /etc/systemd/system/gunicorn.service <<EOF
+              sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<EOF
               [Unit]
               Description=gunicorn daemon for Django
               After=network.target
 
               [Service]
-              User=ubuntu
+              User=$USER
               Group=www-data
-              WorkingDirectory=/home/ubuntu/django-ecommerce
-              ExecStart=/home/ubuntu/django-ecommerce/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/home/ubuntu/django-ecommerce/gunicorn.sock ecomm.wsgi:application
+              WorkingDirectory=$REMOTE_DIR
+              ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
 
               [Install]
               WantedBy=multi-user.target
-              EOF'
+              EOF"
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
 
             # 5️⃣ Setup Nginx if not exists
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
-              sudo bash -c 'cat > /etc/nginx/sites-available/django-ecommerce <<EOF
+              sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<EOF
               server {
                   listen 80;
-                  server_name ${BASE_URL};
+                  server_name ${{ env.BASE_URL }}; # Use BASE_URL from job env
 
                   location = /favicon.ico { access_log off; log_not_found off; }
                   location /static/ {
-                      root /home/ubuntu/django-ecommerce;
+                      root $REMOTE_DIR;
                   }
 
                   location / {
                       include proxy_params;
-                      proxy_pass http://unix:/home/ubuntu/django-ecommerce/gunicorn.sock;
+                      proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
                   }
               }
-              EOF'
+              EOF"
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
             fi
 
