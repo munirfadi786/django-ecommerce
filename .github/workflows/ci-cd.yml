@@ -7,7 +7,6 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -27,31 +26,25 @@ jobs:
       EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
 
     steps:
-      # Step 1: Checkout code
+      # Step 1-6: Local Checks
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      # Step 2: Set up Python (for local checks)
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-
-      # Step 3: Install dependencies locally (Pre-flight check)
-      - name: Install dependencies
+      - name: Install dependencies (Local)
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-
-      # Step 4, 5, 6: Local Checks
-      - name: Run Django migrations
+      - name: Run Django migrations (Local)
         run: python manage.py migrate
-      - name: Run Django tests
+      - name: Run Django tests (Local)
         run: python manage.py test
-      - name: Collect static files
+      - name: Collect static files (Local)
         run: python manage.py collectstatic --noinput
 
-      
+      ---
 
       # Step 7: Copy files to EC2 (Deployment)
       - name: Copy files to EC2
@@ -64,6 +57,10 @@ jobs:
           TARGET: /home/ubuntu/django-ecommerce
           ARGS: --exclude="venv/*"
 
+      ---
+
+      # Step 8: Setup and deploy on EC2
+      # Handles dependencies, venv, and copies pre-written service files
       - name: Setup and deploy on EC2
         uses: appleboy/ssh-action@v0.1.9
         with:
@@ -76,22 +73,74 @@ jobs:
 
             echo "Starting server setup on EC2..."
 
-            # Install required system dependencies
-            echo "Installing system dependencies..."
-            sudo apt-get update -y
-            sudo apt-get install -y python3-venv nginx
+            # 1️⃣ Install required system dependencies (nginx and venv utility)
+            echo "Installing system dependencies (python3-venv, nginx)..."
+            # Combine update and install
+            sudo apt-get update -y && sudo apt-get install -y python3-venv nginx
 
+            # 2️⃣ Setup folder structure and permissions
             sudo mkdir -p $REMOTE_DIR
             sudo chown -R $USER:$USER $REMOTE_DIR
 
+            # 3️⃣ Create Virtual Environment
             if [ ! -d "$REMOTE_DIR/venv" ]; then
               echo "Creating virtual environment..."
               python3 -m venv $REMOTE_DIR/venv
             fi
 
-            VENV_PIP="$REMOTE_DIR/venv/bin/pip"
+            # Define the VENV Python executable path
             VENV_PYTHON="$REMOTE_DIR/venv/bin/python"
 
-            echo "Installing dependencies..."
-            $VENV_PIP install --upgrade pip setuptools wheel
-            $VENV_PIP install -r $REMOTE_DIR/requirements.txt
+            # 4️⃣ CRITICAL FIX: Install/Upgrade pip using the VENV's Python executable
+            echo "Installing/Upgrading pip and installing project dependencies..."
+            $VENV_PYTHON -m pip install --upgrade pip setuptools wheel
+            $VENV_PYTHON -m pip install -r $REMOTE_DIR/requirements.txt
+
+            # 5️⃣ Run migrations and collect static files
+            echo "Running migrations and collecting static files..."
+            $VENV_PYTHON $REMOTE_DIR/manage.py migrate
+            $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
+
+            # 6️⃣ Setup Gunicorn service (copying pre-written file)
+            if [ ! -f /etc/systemd/system/gunicorn.service ]; then
+              echo "Moving Gunicorn service file into systemd..."
+              # Copy the file from the deployed project folder
+              sudo cp $REMOTE_DIR/server-configs/gunicorn.service /etc/systemd/system/gunicorn.service
+              # Enable the service (it will be started in the next step)
+              sudo systemctl daemon-reload
+              sudo systemctl enable gunicorn
+            fi
+
+            # 7️⃣ Setup Nginx configuration (copying pre-written file)
+            if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
+              echo "Moving Nginx config file and enabling site..."
+              # Copy and rename the file to the conventional site name
+              sudo cp $REMOTE_DIR/server-configs/nginx.conf /etc/nginx/sites-available/django-ecommerce
+              
+              # Remove default Nginx site and link the new one
+              sudo rm -f /etc/nginx/sites-enabled/default
+              sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
+            fi
+
+      ---
+
+      # Step 9: Service Restart (Dedicated step for maximum reliability)
+      - name: Restart Gunicorn and Nginx
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.AWS_SERVER_IP }}
+          username: ${{ secrets.AWS_SSH_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            echo "Restarting Gunicorn and Nginx services..."
+            
+            # Daemon reload is essential after creating/changing service files
+            sudo systemctl daemon-reload
+            
+            # Restart/Status Gunicorn
+            sudo systemctl restart gunicorn
+            sudo systemctl status gunicorn --no-pager || true 
+            
+            # Restart/Status Nginx
+            sudo systemctl restart nginx
+            sudo systemctl status nginx --no-pager || true
