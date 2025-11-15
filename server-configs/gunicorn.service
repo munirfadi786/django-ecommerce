@@ -12,5 +12,10 @@ ExecStart=/home/ubuntu/django-ecommerce/venv/bin/gunicorn \
           --bind unix:/home/ubuntu/django-ecommerce/gunicorn.sock \
           ecomm.wsgi:application
 
+Environment="SECRET_KEY=your_secret_key"
+Environment="DEBUG=False"
+Environment="ALLOWED_HOSTS=3.108.65.30"
+# Add other environment variables your project needs
+
 [Install]
 WantedBy=multi-user.target
