@@ -66,18 +66,16 @@ jobs:
 
       ---
 # Step 8: Run server setup commands on EC2
-      # This version uses a robust, indented heredoc syntax (<<-EOF)
+      # Handles all setup (venv, deps, and moves pre-written config files)
       - name: Setup and deploy on EC2
         uses: appleboy/ssh-action@v0.1.9
         with:
           host: ${{ secrets.AWS_SERVER_IP }}
           username: ${{ secrets.AWS_SSH_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
-          # The script is written using 'indentation-safe' techniques
           script: |
             REMOTE_DIR=/home/ubuntu/django-ecommerce
             USER=${{ secrets.AWS_SSH_USER }}
-            BASE_URL_VAR=${{ env.BASE_URL }} # Pass GitHub variable to shell variable
 
             echo "Starting server setup on EC2..."
             
@@ -102,47 +100,23 @@ jobs:
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
             
-            # 3️⃣ Setup Gunicorn service file
+            # 3️⃣ Setup Gunicorn service (copying pre-written file)
+            # Check if the service file exists in its final location
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
-              echo "Setting up Gunicorn service file..."
-              # Use <<-EOF to allow indentation of content on the remote shell
-              sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<-EOF
-                [Unit]
-                Description=gunicorn daemon for Django
-                After=network.target
-
-                [Service]
-                User=$USER
-                Group=www-data
-                WorkingDirectory=$REMOTE_DIR
-                ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind unix:$REMOTE_DIR/gunicorn.sock ecomm.wsgi:application
-
-                [Install]
-                WantedBy=multi-user.target
-              EOF"
+              echo "Moving Gunicorn service file into systemd..."
+              # Copy the file from the deployed project folder
+              sudo cp $REMOTE_DIR/server-configs/gunicorn.service /etc/systemd/system/gunicorn.service
+              # Enable the service
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
 
-            # 4️⃣ Setup Nginx configuration file
+            # 4️⃣ Setup Nginx configuration (copying pre-written file)
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
-              echo "Setting up Nginx configuration file..."
-              # Use <<-EOF and the shell variable BASE_URL_VAR
-              sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<-EOF
-                server {
-                    listen 80;
-                    server_name $BASE_URL_VAR;
-
-                    location = /favicon.ico { access_log off; log_not_found off; }
-                    location /static/ {
-                        root $REMOTE_DIR;
-                    }
-
-                    location / {
-                        include proxy_params;
-                        proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
-                    }
-                }
-              EOF"
-              sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
+              echo "Moving Nginx config file and enabling site..."
+              # Copy and rename the file to the conventional site name
+              sudo cp $REMOTE_DIR/server-configs/nginx.conf /etc/nginx/sites-available/django-ecommerce
+              
+              # Create symbolic link to enable the site
+              sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled/django-ecommerce
             fi
