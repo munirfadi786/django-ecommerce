@@ -103,11 +103,12 @@ jobs:
             echo "Running migrations and collecting static files..."
             $VENV_PYTHON $REMOTE_DIR/manage.py migrate
             $VENV_PYTHON $REMOTE_DIR/manage.py collectstatic --noinput
-
-            # Setup Gunicorn service file
+            
+# Setup Gunicorn service file
             if [ ! -f /etc/systemd/system/gunicorn.service ]; then
               echo "Setting up Gunicorn service file..."
-              sudo bash -c "cat > /etc/systemd/system/gunicorn.service <<EOF
+              # Use single quotes to safely embed the multiline content
+              sudo bash -c 'cat > /etc/systemd/system/gunicorn.service <<EOF
 [Unit]
 Description=gunicorn daemon for Django
 After=network.target
@@ -120,15 +121,15 @@ ExecStart=$REMOTE_DIR/venv/bin/gunicorn --access-logfile - --workers 3 --bind un
 
 [Install]
 WantedBy=multi-user.target
-EOF"
+EOF' # <-- EOF must be flush left against the shell command boundary.
               sudo systemctl daemon-reload
               sudo systemctl enable gunicorn
             fi
-
-            # Setup Nginx configuration file
+# Setup Nginx configuration file
             if [ ! -f /etc/nginx/sites-available/django-ecommerce ]; then
               echo "Setting up Nginx configuration file..."
-              sudo bash -c "cat > /etc/nginx/sites-available/django-ecommerce <<EOF
+              # Use single quotes again for safe embedding
+              sudo bash -c 'cat > /etc/nginx/sites-available/django-ecommerce <<EOF
 server {
     listen 80;
     server_name ${{ env.BASE_URL }};
@@ -143,10 +144,10 @@ server {
         proxy_pass http://unix:$REMOTE_DIR/gunicorn.sock;
     }
 }
-EOF"
+EOF' # <-- EOF must be flush left against the shell command boundary.
               sudo ln -sf /etc/nginx/sites-available/django-ecommerce /etc/nginx/sites-enabled
             fi
-
+            
       # ➡️ NEW STEP: Step 9: Service Restart
       # This step forces a restart/reload after all configurations are written.
       - name: Restart Gunicorn and Nginx
