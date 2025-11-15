@@ -60,7 +60,7 @@ jobs:
         uses: easingthemes/ssh-deploy@v2
         with:
           SSH_PRIVATE_KEY: ${{ secrets.AWS_SSH_KEY }}
-          REMOTE_USER: ${{ ubuntu }}
+          REMOTE_USER: ${{ secrets.AWS_SSH_USER }}
           REMOTE_HOST: ${{ secrets.AWS_SERVER_IP }}
           SOURCE: .
           TARGET: /home/ubuntu/django-ecommerce
