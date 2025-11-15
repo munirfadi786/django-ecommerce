@@ -55,7 +55,7 @@ jobs:
       - name: Collect static files
         run: python manage.py collectstatic --noinput
 
-      # Step 7: Deploy to AWS (EC2-instance)
+      # Step 7: Deploy to AWS (EC2-instance-2)
       - name: Deploy to AWS EC2
         uses: easingthemes/ssh-deploy@v2
         with:
